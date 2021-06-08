@@ -3,9 +3,10 @@
 import config
 import telebot
 from telebot import types, TeleBot
-import random
-import time
 import pyrebase
+import time
+import datetime
+
 
 configFirebase = {
     "apiKey": "AIzaSyCSO1622ymqxT1S3VzgOzT5pFM8UTyBrTs",
@@ -21,8 +22,13 @@ bot: TeleBot = telebot.TeleBot(config.token)
 
 def getAuctions():
     try:
-        auctions = db.child("auctions").get()
-        return list(auctions.val().keys())
+        auctions = db.child('auctions').get()
+        all_auctions = list(auctions.val().keys())
+        active_auctions = []
+        for a in all_auctions:
+            if db.child('auctions').child(a).child('active').get().val() == 1:
+                active_auctions.append(a)
+        return active_auctions
     except:
         return ['Немає поточних аукціонів']
 
@@ -34,6 +40,8 @@ def getWorks(auction):
     except:
         return ['Немає робіт']
 
+def finish_auction(message, auction):
+    db.child('auctions').child(auction).child('active').set(0)
 
 def get_auction_by_name(name):
     auctions = db.child("auctions").get()
@@ -68,33 +76,33 @@ def to_start(message):
 
 @bot.message_handler(func=lambda message: message.text in getAuctions())
 def choose_category(message):
-    bot.send_message(message.chat.id, 'Чудово! На аукціоні представлені наступні роботи:')
+    bot.send_message(message.chat.id, 'Аукціон завершується ' + time.strftime('%d.%m.%y %H:%M', time.gmtime(db.child('auctions').child(message.text).child('date_of_end').get().val())))
+    bot.send_message(message.chat.id, 'На аукціоні представлені наступні роботи:')
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     markup.add('Повернутися до аукціонів')
     for work in getWorks(message.text):
         bot.send_message(message.chat.id, work)
         markup.add(work)
-    if message.chat.id == 54778971:
+    if message.chat.id == 54778970:
         markup.add('Додати роботу')
-        msg = bot.send_message(message.chat.id, 'Додати?', reply_markup=markup)
-        bot.register_next_step_handler(msg, add_art_1, message.text)
-    else:
-        msg = bot.send_message(message.chat.id, 'Яка робота вас цікавить?', reply_markup=markup)
-        bot.register_next_step_handler(msg, trade_1, message.text)
+        markup.add('Завершити аукціон')
+    msg = bot.send_message(message.chat.id, 'Яка робота вас цікавить?', reply_markup=markup)
+    bot.register_next_step_handler(msg, trade_1, message.text)
 
 
 def trade_1(message, auction):
     if message.text == 'Повернутися до аукціонів':
         start(message)
+    if message.text == 'Завершити аукціон':
+        finish_auction(message, auction)
+    elif message.text == 'Додати роботу':
+        add_art(message, auction)
     else:
         art = dict(db.child('auctions').child(auction).child('art').child(message.text).get().val())
         bot.send_message(message.chat.id, art['name'])
         bot.send_photo(message.chat.id, art['pic_url'])
-        try:
-            highest_bid = art['bids']['start_bid']
-            highest_bidder_id = 0
-        except Exception as e:
-            print(e)
+        highest_bid = art['bids']['start_bid']
+        highest_bidder_id = 0
         try:
             for bid in art['bids']:
                 if art['bids'][bid]['value'] > highest_bid['value']:
@@ -108,7 +116,7 @@ def trade_1(message, auction):
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         bt1 = types.KeyboardButton('Зробити ставку')
         markup.add(bt1)
-        markup.add('Повернутися до аукціонів')
+        markup.add('Повернутися до вибору робіт')
         msg = bot.send_message(message.chat.id,
                                'Бажаєте зробити ставку?',
                                reply_markup=markup)
@@ -116,8 +124,8 @@ def trade_1(message, auction):
 
 
 def make_bid(message, auction, art, highest_bid, highest_bidder_id):
-    if message.text == 'Повернутися до аукціонів':
-        start(message)
+    if message.text == 'Повернутися до вибору робіт':
+        trade_1(message, auction)
     else:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         markup.add('Повернутися до аукціонів')
@@ -139,8 +147,9 @@ def accept_bid(message, auction, art, highest_bid, highest_bidder_id):
                     bot.send_message(highest_bidder_id, 'Ваша ставка на акціоні ' + auction + ' на роботу ' + art['name'] + ' була перебита')
                     bot.send_message(highest_bidder_id, 'Нова ставка - ' + message.text + ' грн')
                     bot.send_message(highest_bidder_id, 'Якщо бажаєте поборотись за цю роботу, оновіть вашу ставку!')
+                    bot.send_message(54778970, '*** Зроблено ставку ' + auction + ' ' + art['name'] + ' ' + message.text + ' ' + highest_bidder_id)
                 time.sleep(2)
-                start(message)
+                trade_1(message, auction)
             else:
                 bot.send_message(message.chat.id, 'Ваша ставка менша за поточну максимальну',
                                  reply_markup=types.ReplyKeyboardRemove())
@@ -150,6 +159,7 @@ def accept_bid(message, auction, art, highest_bid, highest_bidder_id):
             bot.send_message(message.chat.id, 'Ставка не прийнята. Використовуйте лише цифри')
             make_bid(message, auction, art, highest_bid, highest_bidder_id)
 
+
 @bot.message_handler(func=lambda message: message.text == 'Створити аукціон')
 def add_auction(message):
     msg = bot.reply_to(message, 'Введіть назву аукціону', reply_markup=types.ReplyKeyboardRemove())
@@ -158,18 +168,43 @@ def add_auction(message):
 
 def add_date(message):
     auction = {'name': message.text}
-    msg = bot.reply_to(message, 'Введіть дату початку аукціону у форматі DD:MM:YYYY')
+    msg = bot.reply_to(message, 'Введіть дату початку аукціону у форматі DD.MM.YYYY HH.MM')
     bot.register_next_step_handler(msg, add_date_end, auction)
 
 
 def add_date_end(message, auction):
-    auction['date_of_start'] = message.text
-    msg = bot.reply_to(message, 'Введіть дату кінця аукціону у форматі DD:MM:YYYY')
+    try:
+        time_split_1 = message.text.split(' ')
+        time_split_date = time_split_1[0].split('.')
+        time_split_time = time_split_1[1].split('.')
+        d = datetime.datetime(int(time_split_date[2]), int(time_split_date[1]), int(time_split_date[0]), int(time_split_time[0]), int(time_split_time[1]), 0)
+        unixtime = time.mktime(d.timetuple())
+        auction['date_of_start'] = int(unixtime)
+        # current_time = int(time.time())
+        # bot.send_message(message.chat.id, 'До початку аукціону лишилось ' + time.strftime('%H', time.gmtime(unixtime - current_time)) + ' годин')
+
+    except Exception as ex:
+        bot.send_message(message.chat.id, 'Якась проблема з вводом часу')
+        print(ex)
+        start(message)
+
+    msg = bot.reply_to(message, 'Введіть дату кінця аукціону у форматі DD.MM.YYYY HH.MM')
     bot.register_next_step_handler(msg, add_art, auction)
 
 
 def add_art(message, auction):
-    auction['date_of_end'] = message.text
+    try:
+        time_split_1 = message.text.split(' ')
+        time_split_date = time_split_1[0].split('.')
+        time_split_time = time_split_1[1].split('.')
+        d = datetime.datetime(int(time_split_date[2]), int(time_split_date[1]), int(time_split_date[0]),
+                              int(time_split_time[0]), int(time_split_time[1]), 0)
+        unixtime = time.mktime(d.timetuple())
+        auction['date_of_end'] = int(unixtime)
+    except Exception as ex:
+        bot.send_message(message.chat.id, 'Якась проблема з вводом часу')
+        print(ex)
+        start(message)
     try:
         db.child("auctions").child(auction['name']).set(auction)
     except Exception as ex:
@@ -185,6 +220,7 @@ def add_art(message, auction):
         markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
         bt1 = types.KeyboardButton('Додати роботу')
         markup.add(bt1)
+        markup.add('Повернутися до аукціонів')
         msg = bot.send_message(message.chat.id,
                                'Додати?',
                                reply_markup=markup)
@@ -196,8 +232,11 @@ def add_art(message, auction):
 
 
 def add_art_1(message, auctionID):
-    msg = bot.reply_to(message, 'Введіть назву та короткий опис роботи')
-    bot.register_next_step_handler(msg, add_art_2, auctionID)
+    if message.text == 'Повернутися до аукціонів':
+        start(message)
+    else:
+        msg = bot.reply_to(message, 'Введіть назву та короткий опис роботи')
+        bot.register_next_step_handler(msg, add_art_2, auctionID)
 
 
 def add_art_2(message, auctionID):
