@@ -264,7 +264,7 @@ def add_art_4(message, auctionID, art):
         print(ex)
     bot.send_message(message.chat.id, 'Роботу додано')
     bot.send_message(message.chat.id, art['name'])
-    bot.send_message(message.chat.id, 'Стартова ціна: ' + art['bids']['start_bid']['value'])
+    bot.send_message(message.chat.id, 'Стартова ціна: ' + int(art['bids']['start_bid']['value']))
     bot.send_photo(message.chat.id, art['pic_url'])
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     bt1 = types.KeyboardButton('Додати роботу')
@@ -272,9 +272,6 @@ def add_art_4(message, auctionID, art):
     msg = bot.send_message(message.chat.id, 'Додати ще одну роботу?', reply_markup=markup)
     bot.register_next_step_handler(msg, add_art_1, auctionID)
 
-
-# @bot.message_handler(func=lambda message: message.text == 'Додати роботу')
-# def start(message):
 
 @bot.message_handler(func=lambda message: message.text)
 def to_start(message):
