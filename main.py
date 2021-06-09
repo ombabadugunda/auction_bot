@@ -105,7 +105,7 @@ def trade_1(message, auction):
         highest_bidder_id = 0
         try:
             for bid in art['bids']:
-                if art['bids'][bid]['value'] > highest_bid['value']:
+                if int(art['bids'][bid]['value']) > int(highest_bid['value']):
                     highest_bid = art['bids'][bid]
                     highest_bidder_id = art['bids'][bid]['id']
         except Exception as e:
@@ -145,13 +145,14 @@ def accept_bid(message, auction, art, highest_bid, highest_bidder_id):
                                                   'вас про результати', reply_markup=types.ReplyKeyboardRemove())
                 full_bid = {'id': message.chat.id, 'value': int(message.text)}
                 db.child('auctions').child(auction).child('art').child(art['name']).child('bids').push(full_bid)
+                print(highest_bidder_id)
                 if highest_bidder_id != 0:
                     bot.send_message(highest_bidder_id, 'Ваша ставка на акціоні ' + auction + ' на роботу ' + art['name'] + ' була перебита')
-                    bot.send_message(highest_bidder_id, 'Нова ставка - ' + message.text + ' грн')
+                    bot.send_message(highest_bidder_id, 'Нова ставка - ' + str(message.text) + ' грн')
                     bot.send_message(highest_bidder_id, 'Якщо бажаєте поборотись за цю роботу, оновіть вашу ставку!')
-                    bot.send_message(54778970, '*** Зроблено ставку ' + auction + ' ' + art['name'] + ' ' + message.text + ' ' + highest_bidder_id)
+                    bot.send_message(54778970, '*** Зроблено ставку ' + auction + ' ' + art['name'] + ' ' + str(message.text) + ' ' + str(highest_bidder_id))
                 time.sleep(2)
-                trade_1(message, auction)
+                start(message)
             else:
                 bot.send_message(message.chat.id, 'Ваша ставка менша за поточну максимальну',
                                  reply_markup=types.ReplyKeyboardRemove())
@@ -182,8 +183,6 @@ def add_date_end(message, auction):
         d = datetime.datetime(int(time_split_date[2]), int(time_split_date[1]), int(time_split_date[0]), int(time_split_time[0]), int(time_split_time[1]), 0)
         unixtime = time.mktime(d.timetuple())
         auction['date_of_start'] = int(unixtime)
-        # current_time = int(time.time())
-        # bot.send_message(message.chat.id, 'До початку аукціону лишилось ' + time.strftime('%H', time.gmtime(unixtime - current_time)) + ' годин')
 
     except Exception as ex:
         bot.send_message(message.chat.id, 'Якась проблема з вводом часу')
@@ -250,7 +249,7 @@ def add_art_2(message, auctionID):
 def add_art_3(message, auctionID, art):
     art['bids'] = {}
     art['bids']['start_bid'] = {}
-    art['bids']['start_bid']['value'] = message.text
+    art['bids']['start_bid']['value'] = int(message.text)
     art['bids']['start_bid']['id'] = 0
     msg = bot.reply_to(message, 'Введіть посилання на зображення')
     bot.register_next_step_handler(msg, add_art_4, auctionID, art)
@@ -277,6 +276,9 @@ def add_art_4(message, auctionID, art):
 # @bot.message_handler(func=lambda message: message.text == 'Додати роботу')
 # def start(message):
 
+@bot.message_handler(func=lambda message: message.text)
+def to_start(message):
+    start(message)
 
 @bot.message_handler(content_types=['sticker'])
 def sticker(message):
