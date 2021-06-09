@@ -96,7 +96,7 @@ def trade_1(message, auction):
     elif message.text == 'Завершити аукціон':
         finish_auction(message, auction)
     elif message.text == 'Додати роботу':
-        add_art(message, auction)
+        add_art_1(message, auction)
     else:
         art = dict(db.child('auctions').child(auction).child('art').child(message.text).get().val())
         bot.send_message(message.chat.id, art['name'])
@@ -265,7 +265,7 @@ def add_art_4(message, auctionID, art):
         print(ex)
     bot.send_message(message.chat.id, 'Роботу додано')
     bot.send_message(message.chat.id, art['name'])
-    bot.send_message(message.chat.id, 'Стартова ціна: ' + art['bids']['0']['value'])
+    bot.send_message(message.chat.id, 'Стартова ціна: ' + art['bids']['start_bid']['value'])
     bot.send_photo(message.chat.id, art['pic_url'])
     markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     bt1 = types.KeyboardButton('Додати роботу')
