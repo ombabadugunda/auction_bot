@@ -93,7 +93,7 @@ def choose_category(message):
 def trade_1(message, auction):
     if message.text == 'Повернутися до аукціонів':
         start(message)
-    if message.text == 'Завершити аукціон':
+    elif message.text == 'Завершити аукціон':
         finish_auction(message, auction)
     elif message.text == 'Додати роботу':
         add_art(message, auction)
@@ -125,17 +125,19 @@ def trade_1(message, auction):
 
 def make_bid(message, auction, art, highest_bid, highest_bidder_id):
     if message.text == 'Повернутися до вибору робіт':
-        trade_1(message, auction)
+        message.text = auction
+        choose_category(message)
     else:
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        markup.add('Повернутися до аукціонів')
+        markup.add('Повернутися до вибору робіт')
         msg = bot.reply_to(message, 'За яку суму бажаєте купити цю роботу?', reply_markup=markup)
         bot.register_next_step_handler(msg, accept_bid, auction, art, highest_bid, highest_bidder_id)
 
 
 def accept_bid(message, auction, art, highest_bid, highest_bidder_id):
-    if message.text == 'Повернутися до аукціонів':
-        start(message)
+    if message.text == 'Повернутися до вибору робіт':
+        message.text = auction
+        choose_category(message)
     else:
         try:
             if int(message.text) > int(highest_bid['value']):
