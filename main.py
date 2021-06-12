@@ -76,16 +76,26 @@ def to_start(message):
 
 @bot.message_handler(func=lambda message: message.text in getAuctions())
 def choose_category(message):
-    bot.send_message(message.chat.id, 'Аукціон завершується ' + time.strftime('%d.%m.%y %H:%M', time.gmtime(db.child('auctions').child(message.text).child('date_of_end').get().val())))
+    bot.send_message(message.chat.id, db.child('auctions').child(message.text).child('description').get().val())
+    bot.send_message(message.chat.id, '🕐 Аукціон завершується ' + time.strftime('%d.%m.%y %H:%M', time.gmtime(db.child('auctions').child(message.text).child('date_of_end').get().val())))
     bot.send_message(message.chat.id, 'На аукціоні представлені наступні роботи:')
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
-    markup.add('Повернутися до аукціонів')
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    emoji = ['🔴','🟠','🟡','🟢','🔵','🟣','⚫','⚪','️🟤']
+    i = 0
+    works = ''
     for work in getWorks(message.text):
-        bot.send_message(message.chat.id, work)
         markup.add(work)
+        element = emoji[i] + ' ' + work
+        works += element + '\n' + '\n'
+        i += 1
+        if i == 9:
+            i = 0
+    bot.send_message(message.chat.id, works)
     if message.chat.id == 54778970:
         markup.add('Додати роботу')
         markup.add('Завершити аукціон')
+        markup.add('Контактувати з переможцями')
+    markup.add('Повернутися до аукціонів')
     msg = bot.send_message(message.chat.id, 'Яка робота вас цікавить?', reply_markup=markup)
     bot.register_next_step_handler(msg, trade_1, message.text)
 
@@ -97,6 +107,8 @@ def trade_1(message, auction):
         finish_auction(message, auction)
     elif message.text == 'Додати роботу':
         add_art_1(message, auction)
+    elif message.text == 'Контактувати з переможцями':
+        negotiate(message, auction)
     else:
         art = dict(db.child('auctions').child(auction).child('art').child(message.text).get().val())
         bot.send_message(message.chat.id, art['name'])
@@ -110,11 +122,11 @@ def trade_1(message, auction):
                     highest_bidder_id = art['bids'][bid]['id']
         except Exception as e:
             print(e)
-        bot.send_message(message.chat.id, 'Поточна ставка ' + str(highest_bid['value']) + ' грн')
+        bot.send_message(message.chat.id, '💰 Поточна ставка ' + str(highest_bid['value']) + ' грн')
         if message.chat.id == highest_bidder_id:
             bot.send_message(message.chat.id, 'І це ваша ставка')
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-        bt1 = types.KeyboardButton('Зробити ставку')
+        bt1 = types.KeyboardButton('🖐 Зробити ставку')
         markup.add(bt1)
         markup.add('Повернутися до вибору робіт')
         msg = bot.send_message(message.chat.id,
@@ -141,36 +153,43 @@ def accept_bid(message, auction, art, highest_bid, highest_bidder_id):
     else:
         try:
             if int(message.text) > int(highest_bid['value']):
-                bot.send_message(message.chat.id, 'Ваша ставка прийнята. Після завершення аукціону ми повідомимо '
+                bot.send_message(message.chat.id, '✅ Ваша ставка прийнята. Після завершення аукціону ми повідомимо '
                                                   'вас про результати', reply_markup=types.ReplyKeyboardRemove())
                 full_bid = {'id': message.chat.id, 'value': int(message.text)}
                 db.child('auctions').child(auction).child('art').child(art['name']).child('bids').push(full_bid)
                 print(highest_bidder_id)
                 if highest_bidder_id != 0:
-                    bot.send_message(highest_bidder_id, 'Ваша ставка на акціоні ' + auction + ' на роботу ' + art['name'] + ' була перебита')
-                    bot.send_message(highest_bidder_id, 'Нова ставка - ' + str(message.text) + ' грн')
-                    bot.send_message(highest_bidder_id, 'Якщо бажаєте поборотись за цю роботу, оновіть вашу ставку!')
-                    bot.send_message(54778970, '*** Зроблено ставку ' + auction + ' ' + art['name'] + ' ' + str(message.text) + ' ' + str(highest_bidder_id))
+                    bot.send_message(highest_bidder_id, '⚡️ Ваша ставка на аукціоні ' + auction + ' на роботу ' + art['name'] + ' була перебита\n'
+                                                        'Нова ставка - ' + str(message.text) + ' грн\n'
+                                                        'Якщо бажаєте поборотись за цю роботу, оновіть вашу ставку!'
+                                                        'Аукціон завершується ' + time.strftime('%d.%m.%y %H:%M', time.gmtime(db.child('auctions').child(auction).child('date_of_end').get().val())))
+                    bot.send_message(54778970, '❗️ Зроблено ставку ' + auction + ' ' + art['name'] + ' ' + str(message.text) + ' ' + str(highest_bidder_id))
                 time.sleep(2)
                 start(message)
             else:
-                bot.send_message(message.chat.id, 'Ваша ставка менша за поточну максимальну',
+                bot.send_message(message.chat.id, '❌ Ваша ставка менша за поточну максимальну',
                                  reply_markup=types.ReplyKeyboardRemove())
                 make_bid(message, auction, art, highest_bid, highest_bidder_id)
         except Exception as e:
             print('Something wrong with your bet', e)
-            bot.send_message(message.chat.id, 'Ставка не прийнята. Використовуйте лише цифри')
+            bot.send_message(message.chat.id, '❌ Ставка не прийнята. Використовуйте лише цифри')
             make_bid(message, auction, art, highest_bid, highest_bidder_id)
 
 
 @bot.message_handler(func=lambda message: message.text == 'Створити аукціон')
 def add_auction(message):
     msg = bot.reply_to(message, 'Введіть назву аукціону', reply_markup=types.ReplyKeyboardRemove())
-    bot.register_next_step_handler(msg, add_date)
+    bot.register_next_step_handler(msg, add_description)
+
+
+def add_description(message):
+    auction = {'name': message.text}
+    msg = bot.reply_to(message, 'Введіть повний опис аукціону')
+    bot.register_next_step_handler(msg, add_date, auction)
 
 
 def add_date(message):
-    auction = {'name': message.text}
+    auction = {'description': message.text}
     msg = bot.reply_to(message, 'Введіть дату початку аукціону у форматі DD.MM.YYYY HH.MM')
     bot.register_next_step_handler(msg, add_date_end, auction)
 
@@ -218,7 +237,7 @@ def add_art(message, auction):
         for work in getWorks(auctionID):
             bot.send_message(message.chat.id, work)
 
-        markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
         bt1 = types.KeyboardButton('Додати роботу')
         markup.add(bt1)
         markup.add('Повернутися до аукціонів')
@@ -266,11 +285,121 @@ def add_art_4(message, auctionID, art):
     bot.send_message(message.chat.id, art['name'])
     bot.send_message(message.chat.id, 'Стартова ціна: ' + int(art['bids']['start_bid']['value']))
     bot.send_photo(message.chat.id, art['pic_url'])
-    markup = types.ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     bt1 = types.KeyboardButton('Додати роботу')
     markup.add(bt1)
     msg = bot.send_message(message.chat.id, 'Додати ще одну роботу?', reply_markup=markup)
     bot.register_next_step_handler(msg, add_art_1, auctionID)
+
+
+def negotiate(message, auction):
+    works = ''
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for work in getWorks(auction):
+        markup.add(work)
+        works += '🎈 ' + work + '\n'
+        bids = dict(db.child('auctions').child(auction).child('art').child(work).child('bids').get().val())
+        for bid in bids:
+            if bid != 'start_bid':
+                works += '➖ ' + bid + '\n'
+                works += 'Ставка: ' + str(bids[bid]['value']) + '\n'
+                works += 'ID: ' + str(bids[bid]['id']) + '\n'
+                try:
+                    if bids[bid]['result'] == 'Відмова':
+                        works += '❌' + 'Відмова\n'
+                    if bids[bid]['result'] == 'Куплено':
+                        works += '✅' + 'Куплено\n'
+                    if bids[bid]['result'] == 'Надіслано':
+                        works += '❓' + 'Надіслано\n'
+                except Exception as e:
+                    pass
+            works += '\n'
+    markup.add('Назад')
+    msg = bot.send_message(message.chat.id, works, reply_markup=markup)
+    bot.register_next_step_handler(msg, negotiate_2, auction)
+
+
+def negotiate_2(message, auction):
+    if message.text == 'Назад':
+        start(message)
+    else:
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        bids_message = ''
+        art = message.text
+        art_bids = dict(db.child('auctions').child(auction).child('art').child(message.text).child('bids').get().val())
+        for bid in art_bids:
+            if bid != 'start_bid':
+                markup.add(bid)
+                bids_message += '➖ ' + bid + '\n'
+                bids_message += 'Ставка: ' + str(art_bids[bid]['value']) + '\n'
+                bids_message += 'ID: ' + str(art_bids[bid]['id']) + '\n'
+                try:
+                    if art_bids[bid]['result'] == 'Відмова':
+                        bids_message += '❌' + 'Відмова\n'
+                    if art_bids[bid]['result'] == 'Куплено':
+                        bids_message += '✅' + 'Надіслано\n'
+                    if art_bids[bid]['result'] == 'Надіслано':
+                        bids_message += '❓' + 'Надіслано\n'
+                except Exception as e:
+                    pass
+        markup.add('Назад')
+        if bids_message == '':
+            msg = bot.send_message(message.chat.id, 'Немає ставок', reply_markup=markup)
+        else:
+            msg = bot.send_message(message.chat.id, bids_message, reply_markup=markup)
+        bot.register_next_step_handler(msg, negotiate_3, auction, art)
+
+def negotiate_3(message, auction, art):
+    if message.text == 'Назад':
+        negotiate(message, auction)
+    else:
+        bet = message.text
+        markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        markup.add('Надіслати текст-запрошення')
+        markup.add('Відмітити як відмовлення')
+        markup.add('Відмітити як куплене')
+        markup.add('Назад')
+        winner_text = 'Ви можете надіслати наступне повідомлення: \n'
+        winner_text += db.child('auctions').child(auction).child('winner_text').get().val()
+        winner_text += '\nВідмітити відмову або відмітити купівлю роботи'
+        msg = bot.send_message(message.chat.id, winner_text, reply_markup=markup)
+        bot.register_next_step_handler(msg, negotiate_4, auction, art, bet)
+
+
+def negotiate_4(message, auction, art, bet):
+    if message.text == 'Надіслати текст-запрошення':
+        message_id = db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('id').get().val()
+        bot.send_message(message_id,
+                         db.child('auctions').child(auction).child('winner_text').get().val())
+        bot.send_photo(message_id,
+                       db.child('auctions').child(auction).child('art').child(art).child('pic_url').get().val())
+        bot.send_message(message_id, db.child('auctions').child(auction).child('art').child(art).child('name').get().val())
+        mess = 'Ваша ставка: ' + str(db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('value').get().val()) + ' грн\n' + 'Якщо ви не зв\'яжетесь з куратором протягом доби, вашу ставку буде анульовано'
+        bot.send_message(message_id, mess)
+        bot.send_message(message.chat.id, 'Надіслано')
+        data = {'result': 'Надіслано',
+                'id': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child(
+                    'id').get().val(),
+                'value': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child(
+                    'value').get().val()}
+        db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).set(data)
+        negotiate(message, auction)
+    if message.text == 'Відмітити як відмовлення':
+        data = {'result': 'Відмова',
+                'id': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('id').get().val(),
+                'value': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('value').get().val()}
+        db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).set(data)
+        bot.send_message(message.chat.id, 'Зроблено')
+        negotiate(message, auction)
+    if message.text == 'Відмітити як куплене':
+        data = {'result': 'Куплено',
+                'id': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('id').get().val(),
+                'value': db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).child('value').get().val()}
+        db.child('auctions').child(auction).child('art').child(art).child('bids').child(bet).set(data)
+        bot.send_message(message.chat.id, 'Зроблено')
+        negotiate(message, auction)
+    if message.text == 'Назад':
+        negotiate(message, auction)
 
 
 @bot.message_handler(func=lambda message: message.text)
